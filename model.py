@@ -268,7 +268,7 @@ class BaselineReader(nn.Module):
         packed_sequence_output, _ = rnn(packed_sequence_input, None)
         # Unpack hidden states
         unpacked_sequence_tensor, _ = pad_packed_sequence(
-            packed_sequence_output, batch_first=Truev
+            packed_sequence_output, batch_first=True
         )
         # Restore the original order in the batch and return all hidden states
         return unpacked_sequence_tensor.index_select(0, restoration_indices)
