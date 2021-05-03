@@ -129,7 +129,6 @@ def get_children(tok):
     for child_tok in tok.children:
         if child_tok.pos_ not in skip_pos_tags and child_tok.dep_ not in skip_dep_tags:
             child_toks += [(child_tok.text, child_tok.idx)]
-        #print("child_tok: %s => %s (children: %s)" % (child_tok.text, child_tok.dep_, ", ".join("%s:%s" % (child.text, child.dep_) for child in child_tok.children)))
         if child_tok.dep_ not in skip_dep_tags:
             child_toks += get_children(child_tok)
     return child_toks
@@ -200,17 +199,13 @@ def get_sent_vals_map(nlp_passage, sent_to_idx, idx_to_sent):
     objects = get_objects(nlp_passage, sent_to_idx)
     subjects = get_subjects(nlp_passage, sent_to_idx)
     attrs = get_attributes(nlp_passage, sent_to_idx)
-    print(objects)
-    print(subjects)
-    print(attrs)
 
     sent_vals_map = dict()
     for sent_idx in idx_to_sent:
         if sent_idx not in sent_vals_map:
             sent_vals_map[sent_idx] = set()
         for val in subjects[sent_idx] + objects[sent_idx] + attrs[sent_idx]:
-            my_val = " ".join(v[0] for v in val)
-            sent_vals_map[sent_idx].add(my_val)
+            sent_vals_map[sent_idx].add(val)
     return sent_vals_map
 
 def get_ner_tags(nlp_passage, sent_to_idx):
@@ -255,6 +250,7 @@ def get_dep_relevant_sent_idxs(sent_vals_map, idx_to_sent):
     return dep_relevant_sent_idxs
 
 def get_ques_dep_relevant_sent_idxs(sent_vals_map, idx_to_sent, ques_vals):
+    #print("ques_vals: %s" % ques_vals)
     dep_relevant_sent_idxs = set()
     ques_vals_matched = dict()
     ques_vals_unmatched = set()
@@ -314,6 +310,7 @@ def get_ner_relevant_sent_idxs(sent_ner_tags_map, idx_to_sent):
 
 
 def get_ques_ner_relevant_sent_idxs(sent_ner_tags_map, idx_to_sent, ques_ner_tags):
+    #print("ques_ner_tags: %s" % ques_ner_tags)
     ner_relevant_sent_idxs = set()
     ques_ner_tags_matched = dict()
     ques_ner_tags_unmatched = set()
@@ -339,6 +336,36 @@ def get_ques_ner_relevant_sent_idxs(sent_ner_tags_map, idx_to_sent, ques_ner_tag
         ner_relevant_sent_idxs |= matching_sent_idxs
 
     return ner_relevant_sent_idxs
+
+def get_base_adversarial_set(dataset):
+    base_examples = set()
+    base_examples_to_adversial_examples = dict()
+    for idx, elem in enumerate(dataset.elems):
+        passage = [
+            token.lower() for (token, offset) in elem['context_tokens']
+        ][:dataset.args.max_context_length]
+        t_passage = elem["context"]
+
+        is_base_example = True
+        for base_example in base_examples:
+            if t_passage.startswith(base_example[1]):
+                if base_example[0] not in base_examples_to_adversial_examples: 
+                    base_examples_to_adversial_examples[base_example[0]] = set()
+                base_examples_to_adversial_examples[base_example[0]].add(idx) 
+                is_base_example = False
+                break
+        if is_base_example:
+            base_examples.add((idx, t_passage))
+    base_example_idxs = set(val[0] for val in base_examples)
+
+    return base_example_idxs, base_examples_to_adversial_examples
+
+
+class Status:
+    num_ques_base_correct = 0
+    num_ques_base_incorrect = 0
+    num_ques_adv_correct = 0
+    num_ques_adv_incorrect = 0
 
 class QADataset(Dataset):
     """
@@ -377,201 +404,148 @@ class QADataset(Dataset):
         import spacy
         nlp = spacy.load("en_core_web_sm")
 
-        base_examples = set()
-        base_examples_to_adversial_examples = dict()
-        for idx, elem in enumerate(self.elems):
-            #if idx > 10: 
-            #    break
-            passage = [
-                token.lower() for (token, offset) in elem['context_tokens']
-            ][:self.args.max_context_length]
+        base_example_idxs, base_examples_to_adversial_examples = get_base_adversarial_set(self)
 
-            t_passage = elem["context"]
-
-            is_base_example = True
-            for base_example in base_examples:
-                if t_passage.startswith(base_example[1]):
-                    if base_example[0] not in base_examples_to_adversial_examples: 
-                        base_examples_to_adversial_examples[base_example[0]] = set()
-                    base_examples_to_adversial_examples[base_example[0]].add(idx) 
-                    is_base_example = False
-                    break
-            if is_base_example:
-                base_examples.add((idx, t_passage))
-
-        base_example_idxs = set(val[0] for val in base_examples)
         print("No. samples: %s" % len(self.elems))
         print("No. base samples: %s" % len(base_example_idxs))
         print("No. adversarial samples: %s" % (len(self.elems) - len(base_example_idxs)))
 
-        num_base_sentences_correct = 0
-        num_base_sentences_incorrect = 0
-        num_adversarial_sentences_correct = 0
-        num_adversarial_sentences_incorrect = 0
-
-        ner_num_base_sentences_correct = 0
-        ner_num_base_sentences_incorrect = 0
-        ner_num_adversarial_sentences_correct = 0
-        ner_num_adversarial_sentences_incorrect = 0
-
-        dep_num_base_sentences_correct = 0
-        dep_num_base_sentences_incorrect = 0
-        dep_num_adversarial_sentences_correct = 0
-        dep_num_adversarial_sentences_incorrect = 0
-
-        last_sent_correct_answers = set()
-        dep_ner_culled_correct_answer = set()
-        ner_culled_correct_answer = set()
-        dep_culled_correct_answer = set()
+        all_state = dict()
+        last_sent_correct_answers = set() 
 
         samples = []
         for idx, elem in enumerate(self.elems):
-            print("********")
-            t_passage = elem['context'] #[:self.args.max_context_length]
+
+            t_passage = elem['context']
+            print("***************************************************************************************************")
             print("BASE" if idx in base_example_idxs else "ADVERSARIAL")
             print("%s: %s" % (idx, t_passage))
 
-            # Each passage_l has several questions associated with it.
-            # Additionally, each question has multiple possible answer spans.
             nlp_passage = nlp(t_passage)
-          
             sent_to_idx, idx_to_sent = get_sent_idx_maps(nlp_passage)
+            last_sent = idx_to_sent[max(idx_to_sent)]
+            last_sent_start_tok = last_sent.start
+            last_start_sent_char = last_sent.start_char
+            print("last_start_sent_char: %s" % last_start_sent_char)
 
-            last_sent_start = idx_to_sent[max(idx_to_sent)].start
-
-            sent_vals_map = get_sent_vals_map(nlp_passage, sent_to_idx, idx_to_sent)
-
+            # NER Tagging
             sent_ner_tags_map = get_ner_tags(nlp_passage, sent_to_idx)
-
-            #print("****")
-            #print("NER tagging")
-
             ner_relevant_sent_idxs = get_ner_relevant_sent_idxs(sent_ner_tags_map, idx_to_sent)
-            ner_irrelevant_sent_idxs = [idx for idx in idx_to_sent if idx not in ner_relevant_sent_idxs]
-            #print("ner_relevant sentences: %s" % list(ner_relevant_sent_idxs))
-            #print("ner_irrelevant sentences: %s" % [idx for idx in idx_to_sent if idx not in ner_relevant_sent_idxs])
+            ner_irrelevant_sent_idxs = set([idx for idx in idx_to_sent if idx not in ner_relevant_sent_idxs])
             final_ner_irrelevant_sent_idxs = get_final_set(ner_irrelevant_sent_idxs, idx_to_sent)
-            #print("final_ner_irrelevant_sentences: %s" % final_ner_irrelevant_sent_idxs)
-
-            ner_incorrect_base = (idx in base_example_idxs and len(final_ner_irrelevant_sent_idxs) != 0)
-            if idx in base_example_idxs:
-                ner_num_base_sentences_correct += len(final_ner_irrelevant_sent_idxs) == 0
-                ner_num_base_sentences_incorrect += len(final_ner_irrelevant_sent_idxs) != 0
-            else:
-                ner_num_adversarial_sentences_correct += len(final_ner_irrelevant_sent_idxs) == 1 and min(final_ner_irrelevant_sent_idxs) == max(idx_to_sent)
-                ner_num_adversarial_sentences_incorrect += len(final_ner_irrelevant_sent_idxs) != 1 or min(final_ner_irrelevant_sent_idxs) != max(idx_to_sent)
-
-            #print("****")
-            #print("DEP Tagging")
+          
+            # Dependency Parsing
+            sent_vals_map = get_sent_vals_map(nlp_passage, sent_to_idx, idx_to_sent)
             dep_relevant_sent_idxs = get_dep_relevant_sent_idxs(sent_vals_map, idx_to_sent)
-            dep_irrelevant_sent_idxs = [idx for idx in idx_to_sent if idx not in dep_relevant_sent_idxs]
-            #print("dep_relevant sentences: %s" % list(dep_relevant_sent_idxs))
-            #print("dep_irrelevant sentences: %s" % dep_irrelevant_sent_idxs)
+            dep_irrelevant_sent_idxs = set([idx for idx in idx_to_sent if idx not in dep_relevant_sent_idxs])
             final_dep_irrelevant_sent_idxs = get_final_set(dep_irrelevant_sent_idxs, idx_to_sent)
-            #print("final_dep_irrelevant_sentences: %s" % final_dep_irrelevant_sent_idxs)
-
-            dep_incorrect_base = (idx in base_example_idxs and len(final_dep_irrelevant_sent_idxs) != 0)
-            if idx in base_example_idxs:
-                dep_num_base_sentences_correct += len(final_dep_irrelevant_sent_idxs) == 0
-                dep_num_base_sentences_incorrect += len(final_dep_irrelevant_sent_idxs) != 0
-            else:
-                dep_num_adversarial_sentences_correct += len(final_dep_irrelevant_sent_idxs) == 1 and min(final_dep_irrelevant_sent_idxs) == max(idx_to_sent)
-                dep_num_adversarial_sentences_incorrect += len(final_dep_irrelevant_sent_idxs) != 1 or min(final_dep_irrelevant_sent_idxs) != max(idx_to_sent)
             
-            #print("****")
-            #print("DEP/NER")
             dep_ner_irrelevant_sent_idxs = set(final_dep_irrelevant_sent_idxs) & set(final_ner_irrelevant_sent_idxs)
-            #print("dep_ner_irrelevant sentences: %s" % str(dep_ner_irrelevant_sent_idxs))
             final_dep_ner_irrelevant_sent_idxs = get_final_set(dep_ner_irrelevant_sent_idxs, idx_to_sent)
-            #print("final_dep_ner_irrelevant sentences: %s" % final_dep_ner_irrelevant_sent_idxs)
-
-            dep_ner_incorrect_base = (idx in base_example_idxs and len(final_dep_ner_irrelevant_sent_idxs) != 0)
-            if idx in base_example_idxs:
-                num_base_sentences_correct += len(final_dep_ner_irrelevant_sent_idxs) == 0
-                num_base_sentences_incorrect += len(final_dep_ner_irrelevant_sent_idxs) != 0
-                #print("BASE CORRECT" if len(final_dep_ner_irrelevant_sent_idxs) == 0 else "BASE INCORRECT")
-            else:
-                num_adversarial_sentences_correct += len(final_dep_ner_irrelevant_sent_idxs) == 1 and min(final_dep_ner_irrelevant_sent_idxs) == max(idx_to_sent)
-                num_adversarial_sentences_incorrect += len(final_dep_ner_irrelevant_sent_idxs) != 1 or min(final_dep_ner_irrelevant_sent_idxs) != max(idx_to_sent)
-                #print("ADVERSARIAL CORRECT" if len(final_dep_ner_irrelevant_sent_idxs) == 1 and min(final_dep_ner_irrelevant_sent_idxs) == max(idx_to_sent) else "ADVERSARIAL INCORRECT")
-
+           
             for qa in elem['qas']:
                 qid = qa['qid']
                 question = [
                     token for (token, offset) in qa['question_tokens']
                 ][:self.args.max_question_length]
+                answers = qa['detected_answers']
+                answer_start, answer_end = answers[0]['token_spans'][0]
 
                 t_question = qa['question']
                 print("*")
                 print("question: %s" % t_question)
+
                 nlp_question = nlp(t_question)
                 ques_to_idx, idx_to_ques = get_sent_idx_maps(nlp_question)
+
+                # NER Tagging
                 ques_ner_tags_map = get_ner_tags(nlp_question, ques_to_idx)
-                ques_vals_map = get_sent_vals_map(nlp_question, ques_to_idx, idx_to_ques)
-
-                ques_ner_tags = list(ques_ner_tags_map.values())[0]
-                ques_vals = list(ques_vals_map.values())[0]
-
+                ques_ner_tags = list(ques_ner_tags_map.values())[0] if ques_ner_tags_map else []
                 ques_ner_relevant_sent_idxs = get_ques_ner_relevant_sent_idxs(sent_ner_tags_map, idx_to_sent, ques_ner_tags)
-                ques_ner_irrelevant_sent_idxs = [idx for idx in idx_to_sent if idx not in ques_ner_relevant_sent_idxs]
+                ques_ner_irrelevant_sent_idxs = set([idx for idx in idx_to_sent if idx not in ques_ner_relevant_sent_idxs])
+                final_ques_ner_irrelevant_sent_idxs = get_final_set(ques_ner_irrelevant_sent_idxs, idx_to_sent)
 
-                print("ques_ner_relevant_sent_idxs: %s" % ques_ner_relevant_sent_idxs)
-                print("ques_ner_irrelevant_sent_idxs: %s" % ques_ner_irrelevant_sent_idxs)
-
+                # Dependency Parsing
+                ques_vals_map = get_sent_vals_map(nlp_question, ques_to_idx, idx_to_ques)
+                ques_vals = list(ques_vals_map.values())[0] if ques_vals_map else []
                 ques_dep_relevant_sent_idxs = get_ques_dep_relevant_sent_idxs(sent_vals_map, idx_to_sent, ques_vals)
-                ques_dep_irrelevant_sent_idxs = [idx for idx in idx_to_sent if idx not in ques_dep_relevant_sent_idxs]
+                ques_dep_irrelevant_sent_idxs = set([idx for idx in idx_to_sent if idx not in ques_dep_relevant_sent_idxs])
+                final_ques_dep_irrelevant_sent_idxs = get_final_set(ques_dep_irrelevant_sent_idxs, idx_to_sent)
 
-                print("ques_dep_relevant_sent_idxs: %s" % ques_dep_relevant_sent_idxs)
-                print("ques_dep_irrelevant_sent_idxs: %s" % ques_dep_irrelevant_sent_idxs)
+                final_ques_dep_ner_irrelevant_sent_idxs = final_ques_ner_irrelevant_sent_idxs & final_ques_dep_irrelevant_sent_idxs
 
-                answers = qa['detected_answers']
 
-                answer_start, answer_end = answers[0]['token_spans'][0]
+                passage_irrelevant = [  #("P_NONE", set(idx_to_sent.keys())),\
+                                        ("P_NER", final_ner_irrelevant_sent_idxs),\
+                                        #("P_DEP", final_dep_irrelevant_sent_idxs),\
+                                        #("P_DEP+NER", final_dep_ner_irrelevant_sent_idxs)
+                                        ]
+                question_irrelevant = [ #("Q_NONE", set(idx_to_sent.keys())),\
+                                        ("Q_NER", final_ques_ner_irrelevant_sent_idxs),\
+                                        #("Q_DEP", final_ques_dep_irrelevant_sent_idxs),\
+                                        #("Q_DEP+NER", final_ques_dep_ner_irrelevant_sent_idxs)
+                                        ]
+
+                class_set = None
+                for (p_tag, p_set) in passage_irrelevant:
+                    for (q_tag, q_set) in question_irrelevant:
+                        if p_tag == "P_NONE" and q_tag == "Q_NONE":
+                            continue
+                        tag = "%s_%s" % (p_tag, q_tag)
+                        if tag not in all_state:
+                            all_state[tag] = Status()
+                        state = all_state[tag]
+
+                        class_set = p_set & q_set
+
+                        if idx in base_example_idxs:
+                            if answer_start > last_sent_start_tok:
+                                if class_set: 
+                                    assert(len(class_set) == 1 and min(class_set) == max(idx_to_sent.keys()))
+                                    state.num_ques_base_incorrect += 1
+                                else:
+                                    state.num_ques_base_correct += 1
+                        else: 
+                            if class_set:
+                                assert(len(class_set) == 1 and min(class_set) == max(idx_to_sent.keys()))
+                                state.num_ques_adv_correct += 1
+                            else: 
+                                state.num_ques_adv_incorrect += 1
+
+                
+                print("KEEP" if not class_set else "CULL")
+
+                if class_set:
+                    passage = [
+                        token.lower() for (token, offset) in elem['context_tokens'] if offset < last_start_sent_char
+                    ][:self.args.max_context_length]
+                else: 
+                    passage = [
+                        token.lower() for (token, offset) in elem['context_tokens']
+                    ][:self.args.max_context_length]
+ 
+                print("final passage: %s" % " ".join(v for v in passage))
                 samples.append(
                     (qid, passage, question, answer_start, answer_end)
                 )
 
-                if answer_start > last_sent_start:
+                #assert(False)
+                if answer_start > last_sent_start_tok:
                     last_sent_correct_answers.add(t_question)
-                    if dep_ner_incorrect_base: 
-                        #print("DEP/NER culled answer to %s" % t_question)
-                        dep_ner_culled_correct_answer.add(t_question)
-                    if ner_incorrect_base: 
-                        #print("NER culled answer to %s" % t_question)
-                        ner_culled_correct_answer.add(t_question)
-                    if dep_incorrect_base: 
-                        #print("DEP culled answer to %s" % t_question)
-                        dep_culled_correct_answer.add(t_question)
-
-        print("FINAL")
-        print("*")
-        print("NER")
-        print("num_base_sentences_correct: %s" % ner_num_base_sentences_correct)
-        print("num_base_sentences_incorrect: %s" % ner_num_base_sentences_incorrect)
-        print("num_adversarial_sentences_correct: %s" % ner_num_adversarial_sentences_correct)
-        print("num_adversarial_sentences_incorrect: %s" % ner_num_adversarial_sentences_incorrect)
-        print("*")
-        print("DEP")
-        print("num_base_sentences_correct: %s" % dep_num_base_sentences_correct)
-        print("num_base_sentences_incorrect: %s" % dep_num_base_sentences_incorrect)
-        print("num_adversarial_sentences_correct: %s" % dep_num_adversarial_sentences_correct)
-        print("num_adversarial_sentences_incorrect: %s" % dep_num_adversarial_sentences_incorrect)
-        print("*")
-        print("DEP/NER")
-        print("num_base_sentences_correct: %s" % num_base_sentences_correct)
-        print("num_base_sentences_incorrect: %s" % num_base_sentences_incorrect)
-        print("num_adversarial_sentences_correct: %s" % num_adversarial_sentences_correct)
-        print("num_adversarial_sentences_incorrect: %s" % num_adversarial_sentences_incorrect)
-        print("*")
-        print("Culled Correct Answer")
+               
+        print("**********")
+        print("RESULTS")      
         print("num_last_sentence_correct_ansers: %s" % len(last_sent_correct_answers))
-        print("num_ner_culled_correct_answers: %s" % len(ner_culled_correct_answer))
-        print("num_dep_culled_correct_answers: %s" % len(dep_culled_correct_answer))
-        print("num_dep_ner_culled_correct_answers: %s" % len(dep_ner_culled_correct_answer))
+      
+        for tag, state  in all_state.items():
+            print("*")
+            print("TAG: %s" % tag)
+            print("num_ques_base_correct: %s" % state.num_ques_base_correct)
+            print("num_ques_base_incorrect: %s" % state.num_ques_base_incorrect)
+            print("num_ques_adv_correct: %s" % state.num_ques_adv_correct)
+            print("num_ques_adv_incorrect: %s" % state.num_ques_adv_incorrect)
 
-        assert(False)       
         return samples
-
 
 
     def _create_data_generator(self, shuffle_examples=False):
@@ -600,8 +574,6 @@ class QADataset(Dataset):
         for idx in example_idxs:
             # Unpack QA sample and tokenize passage/question.
             qid, passage, question, answer_start, answer_end = self.samples[idx]
-            print("passage: %s" % passage)
-            print("question: %s" % question)
 
             # Convert words to tensor.
             passage_ids = torch.tensor(
