@@ -512,14 +512,14 @@ class QADataset(Dataset):
                                 state.num_ques_adv_incorrect += 1
 
                 
-                if class_set:
-                    passage = [
-                        token.lower() for (token, offset) in elem['context_tokens'] if offset < last_start_sent_char
-                    ][:self.args.max_context_length]
-                else: 
-                    passage = [
-                        token.lower() for (token, offset) in elem['context_tokens']
-                    ][:self.args.max_context_length]
+                #if class_set:
+                #    passage = [
+                #        token.lower() for (token, offset) in elem['context_tokens'] if offset < last_start_sent_char
+                #    ][:self.args.max_context_length]
+                #else: 
+                passage = [
+                    token.lower() for (token, offset) in elem['context_tokens']
+                ][:self.args.max_context_length]
  
                 samples.append(
                     (qid, passage, question, answer_start, answer_end)
