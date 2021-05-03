@@ -479,7 +479,7 @@ def main(args):
     print()
 
     # Select model.
-    model = ](args)
+    model = _select_model(args)
     num_pretrained = model.load_pretrained_embeddings(
         vocabulary, args.embedding_path
     )

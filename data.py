@@ -478,12 +478,12 @@ class QADataset(Dataset):
                                         ("P_NER", final_ner_irrelevant_sent_idxs),\
                                         #("P_DEP", final_dep_irrelevant_sent_idxs),\
                                         #("P_DEP+NER", final_dep_ner_irrelevant_sent_idxs)
-                                        ]
+                                    ]
                 question_irrelevant = [ #("Q_NONE", set(idx_to_sent.keys())),\
                                         ("Q_NER", final_ques_ner_irrelevant_sent_idxs),\
                                         #("Q_DEP", final_ques_dep_irrelevant_sent_idxs),\
                                         #("Q_DEP+NER", final_ques_dep_ner_irrelevant_sent_idxs)
-                                        ]
+                                    ]
 
                 class_set = None
                 for (p_tag, p_set) in passage_irrelevant:
