@@ -223,12 +223,14 @@ class BaselineReader(nn.Module):
             path: Embedding path, e.g. "glove/glove.6B.300d.txt".
         """
         embedding_map = load_cached_embeddings(path)
+        print("loaded cached embeddings")
 
         # Create embedding matrix. By default, embeddings are randomly
         # initialized from Uniform(-0.1, 0.1).
         embeddings = torch.zeros(
             (len(vocabulary), self.args.embedding_dim)
         ).uniform_(-0.1, 0.1)
+        print("created embeddings matrix")
 
         # Initialize pre-trained embeddings.
         num_pretrained = 0
@@ -276,7 +278,9 @@ class BaselineReader(nn.Module):
     def forward(self, batch):
         # Obtain masks and lengths for passage and question.
         passage_mask = (batch['passages'] != self.pad_token_id)  # [batch_size, p_len]
+        print("passage_mask: %s" % passage_mask)
         question_mask = (batch['questions'] != self.pad_token_id)  # [batch_size, q_len]
+        print("question_mask: %s" % question_mask)
         passage_lengths = passage_mask.long().sum(-1)  # [batch_size]
         question_lengths = question_mask.long().sum(-1)  # [batch_size]
 
