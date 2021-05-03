@@ -312,16 +312,12 @@ def train(args, epoch, model, dataset):
     )
     num_batches = 0
     for batch in train_dataloader:
-        print("batch %d" % num_batches)
-        print("batch: %s" % batch)
         num_batches += 1
         # Zero gradients.
         optimizer.zero_grad()
 
         # Forward inputs, calculate loss, optimize model.
         start_logits, end_logits = model(batch)
-        #print("start_logits: %s" % start_logits)
-        #print("end_logits: %s" % end_logits)
         loss = _calculate_loss(
             start_logits,
             end_logits,
@@ -339,7 +335,6 @@ def train(args, epoch, model, dataset):
         train_dataloader.set_description(
             f'[train] epoch = {epoch}, loss = {train_loss / train_steps:.6f}'
         )
-    print("num_batches: %d" % num_batches)
     return train_loss / train_steps
 
 
@@ -459,7 +454,6 @@ def main(args):
     # Print arguments.
     print('\nusing arguments:')
     _print_arguments(args)
-    print()
 
     # Check if GPU is available.
     if not args.use_gpu and torch.cuda.is_available():
@@ -485,13 +479,10 @@ def main(args):
     print()
 
     # Select model.
-    print("select model")
-    model = _select_model(args)
-    print("load pretrained embeddings")
+    model = ](args)
     num_pretrained = model.load_pretrained_embeddings(
         vocabulary, args.embedding_path
     )
-    print("num_pretrained: %s" % num_pretrained)
     pct_pretrained = round(num_pretrained / len(vocabulary) * 100., 2)
     print(f'using pre-trained embeddings from \'{args.embedding_path}\'')
     print(
@@ -505,8 +496,6 @@ def main(args):
 
     params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f'using model \'{args.model}\' ({params} params)')
-    print(model)
-    print()
 
     if args.do_train:
         # Track training statistics for checkpointing.
@@ -515,12 +504,9 @@ def main(args):
 
         # Begin training.
         for epoch in range(1, args.epochs + 1):
-            print("Start epoch %d" % epoch)
             # Perform training and evaluation steps.
             train_loss = train(args, epoch, model, train_dataset)
-            print("finished with training: %s" % train_loss)
             eval_loss = evaluate(args, epoch, model, dev_dataset)
-            print("finished with evaluate: %s" % eval_loss)
 
             # If the model's evaluation loss yields a global improvement,
             # checkpoint the model.

@@ -407,8 +407,8 @@ class QADataset(Dataset):
         base_example_idxs, base_examples_to_adversial_examples = get_base_adversarial_set(self)
 
         print("No. samples: %s" % len(self.elems))
-        print("No. base samples: %s" % len(base_example_idxs))
-        print("No. adversarial samples: %s" % (len(self.elems) - len(base_example_idxs)))
+        #print("No. base samples: %s" % len(base_example_idxs))
+        #print("No. adversarial samples: %s" % (len(self.elems) - len(base_example_idxs)))
 
         all_state = dict()
         last_sent_correct_answers = set() 
@@ -417,16 +417,15 @@ class QADataset(Dataset):
         for idx, elem in enumerate(self.elems):
 
             t_passage = elem['context']
-            print("***************************************************************************************************")
-            print("BASE" if idx in base_example_idxs else "ADVERSARIAL")
-            print("%s: %s" % (idx, t_passage))
+            #print("***************************************************************************************************")
+            #print("BASE" if idx in base_example_idxs else "ADVERSARIAL")
+            #print("%s: %s" % (idx, t_passage))
 
             nlp_passage = nlp(t_passage)
             sent_to_idx, idx_to_sent = get_sent_idx_maps(nlp_passage)
             last_sent = idx_to_sent[max(idx_to_sent)]
             last_sent_start_tok = last_sent.start
             last_start_sent_char = last_sent.start_char
-            print("last_start_sent_char: %s" % last_start_sent_char)
 
             # NER Tagging
             sent_ner_tags_map = get_ner_tags(nlp_passage, sent_to_idx)
@@ -452,8 +451,8 @@ class QADataset(Dataset):
                 answer_start, answer_end = answers[0]['token_spans'][0]
 
                 t_question = qa['question']
-                print("*")
-                print("question: %s" % t_question)
+                #print("*")
+                #print("question: %s" % t_question)
 
                 nlp_question = nlp(t_question)
                 ques_to_idx, idx_to_ques = get_sent_idx_maps(nlp_question)
@@ -513,8 +512,6 @@ class QADataset(Dataset):
                                 state.num_ques_adv_incorrect += 1
 
                 
-                print("KEEP" if not class_set else "CULL")
-
                 if class_set:
                     passage = [
                         token.lower() for (token, offset) in elem['context_tokens'] if offset < last_start_sent_char
@@ -524,26 +521,24 @@ class QADataset(Dataset):
                         token.lower() for (token, offset) in elem['context_tokens']
                     ][:self.args.max_context_length]
  
-                print("final passage: %s" % " ".join(v for v in passage))
                 samples.append(
                     (qid, passage, question, answer_start, answer_end)
                 )
 
-                #assert(False)
                 if answer_start > last_sent_start_tok:
                     last_sent_correct_answers.add(t_question)
                
-        print("**********")
-        print("RESULTS")      
-        print("num_last_sentence_correct_ansers: %s" % len(last_sent_correct_answers))
+        #print("**********")
+        #print("RESULTS")      
+        #print("num_last_sentence_correct_ansers: %s" % len(last_sent_correct_answers))
       
-        for tag, state  in all_state.items():
-            print("*")
-            print("TAG: %s" % tag)
-            print("num_ques_base_correct: %s" % state.num_ques_base_correct)
-            print("num_ques_base_incorrect: %s" % state.num_ques_base_incorrect)
-            print("num_ques_adv_correct: %s" % state.num_ques_adv_correct)
-            print("num_ques_adv_incorrect: %s" % state.num_ques_adv_incorrect)
+        #for tag, state  in all_state.items():
+        #    print("*")
+        #    print("TAG: %s" % tag)
+        #    print("num_ques_base_correct: %s" % state.num_ques_base_correct)
+        #    print("num_ques_base_incorrect: %s" % state.num_ques_base_incorrect)
+        #    print("num_ques_adv_correct: %s" % state.num_ques_adv_correct)
+        #    print("num_ques_adv_incorrect: %s" % state.num_ques_adv_incorrect)
 
         return samples
 

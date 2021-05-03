@@ -86,7 +86,6 @@ def load_cached_embeddings(path):
     if os.path.exists(cached_path):
         return pickle.load(open(cached_path, 'rb'))
     embedding_map = load_embeddings(path)
-    print("loaded cached embeddings")
     pickle.dump(embedding_map, open(cached_path, 'wb'))
     return embedding_map
 
