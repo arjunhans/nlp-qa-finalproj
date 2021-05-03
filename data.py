@@ -540,6 +540,7 @@ class QADataset(Dataset):
         #    print("num_ques_adv_correct: %s" % state.num_ques_adv_correct)
         #    print("num_ques_adv_incorrect: %s" % state.num_ques_adv_incorrect)
 
+        print("Completed processing samples")
         return samples
 
 

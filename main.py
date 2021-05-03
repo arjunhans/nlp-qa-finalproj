@@ -463,6 +463,7 @@ def main(args):
     # Set up datasets.
     train_dataset = QADataset(args, args.train_path)
     dev_dataset = QADataset(args, args.dev_path)
+    print("Start creating vocabulary and tokenizer")
 
     # Create vocabulary and tokenizer.
     vocabulary = Vocabulary(train_dataset.samples, args.vocab_size)
