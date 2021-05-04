@@ -246,7 +246,7 @@ def _early_stop(args, eval_history):
 
 
 def _calculate_loss(
-    start_logits, end_logits, start_positions, end_positions
+    start_logits, end_logits, start_positions, end_positions, text_questions
 ):
     """
     Calculates cross-entropy loss for QA samples, which is defined as
@@ -273,7 +273,12 @@ def _calculate_loss(
     start_loss = criterion(start_logits, start_positions)
     end_loss = criterion(end_logits, end_positions)
 
-    return (start_loss + end_loss) / 2.
+    loss = (start_loss + end_loss) / 2.
+    if loss == float("inf"):
+        print("text_questions: %s" % text_questions)
+        assert(False)
+
+    return loss
 
 
 def train(args, epoch, model, dataset):
@@ -323,6 +328,7 @@ def train(args, epoch, model, dataset):
             end_logits,
             batch['start_positions'],
             batch['end_positions'],
+            batch['text_questions']
         )
         loss.backward()
         if args.grad_clip > 0.:
@@ -374,6 +380,7 @@ def evaluate(args, epoch, model, dataset):
                 end_logits,
                 batch['start_positions'],
                 batch['end_positions'],
+                batch['text_questions']
             )
 
             # Update tqdm bar.

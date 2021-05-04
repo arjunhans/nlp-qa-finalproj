@@ -418,7 +418,6 @@ class QADataset(Dataset):
         samples = []
         unanswerable_samples = []
         for idx, elem in enumerate(self.elems):
-
             t_passage = elem['context']
             #print("***************************************************************************************************")
             #print("BASE" if idx in base_example_idxs else "ADVERSARIAL")
@@ -501,7 +500,7 @@ class QADataset(Dataset):
                         class_set = p_set & q_set
 
                         if idx in base_example_idxs:
-                            if answer_start > last_sent_start_tok:
+                            if answer_start >= last_sent_start_tok:
                                 if class_set: 
                                     assert(len(class_set) == 1 and min(class_set) == max(idx_to_sent.keys()))
                                     state.num_ques_base_incorrect += 1
@@ -526,7 +525,8 @@ class QADataset(Dataset):
  
                 sample = (qid, passage, question, answer_start, answer_end)
 
-                if class_set and answer_start > last_sent_start_tok:
+                if class_set and answer_start >= last_sent_start_tok:
+                    #print("unaswerable question: %s (%s) in passage %d" % (t_question, qid, idx))
                     unanswerable_samples.append(sample)
                 else:
                     samples.append(sample)
@@ -546,7 +546,8 @@ class QADataset(Dataset):
         #    print("num_ques_adv_correct: %s" % state.num_ques_adv_correct)
         #    print("num_ques_adv_incorrect: %s" % state.num_ques_adv_incorrect)
 
-        print("Completed processing samples")
+        #print("Completed processing samples")
+        #print("unanswerable_samples: %s" % len(unanswerable_samples))
         return samples, unanswerable_samples
 
 
@@ -573,6 +574,7 @@ class QADataset(Dataset):
         questions = []
         start_positions = []
         end_positions = []
+        text_questions = []
         for idx in example_idxs:
             # Unpack QA sample and tokenize passage/question.
             qid, passage, question, answer_start, answer_end = self.samples[idx]
@@ -592,8 +594,9 @@ class QADataset(Dataset):
             questions.append(question_ids)
             start_positions.append(answer_start_ids)
             end_positions.append(answer_end_ids)
+            text_questions.append(question)
 
-        return zip(passages, questions, start_positions, end_positions)
+        return zip(passages, questions, start_positions, end_positions, text_questions)
 
     def _create_batches(self, generator, batch_size):
         """
@@ -626,6 +629,7 @@ class QADataset(Dataset):
 
             passages = []
             questions = []
+            text_questions = []
             start_positions = torch.zeros(bsz)
             end_positions = torch.zeros(bsz)
             max_passage_length = 0
@@ -636,6 +640,7 @@ class QADataset(Dataset):
                 questions.append(current_batch[ii][1])
                 start_positions[ii] = current_batch[ii][2]
                 end_positions[ii] = current_batch[ii][3]
+                text_questions.append(current_batch[ii][4])
                 max_passage_length = max(
                     max_passage_length, len(current_batch[ii][0])
                 )
@@ -658,7 +663,8 @@ class QADataset(Dataset):
                 'passages': cuda(self.args, padded_passages).long(),
                 'questions': cuda(self.args, padded_questions).long(),
                 'start_positions': cuda(self.args, start_positions).long(),
-                'end_positions': cuda(self.args, end_positions).long()
+                'end_positions': cuda(self.args, end_positions).long(), 
+                'text_questions': text_questions
             }
 
             if no_more_data:
