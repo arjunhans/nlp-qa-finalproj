@@ -387,7 +387,9 @@ class QADataset(Dataset):
     def __init__(self, args, path):
         self.args = args
         self.meta, self.elems = load_dataset(path)
-        self.samples = self._create_samples()
+        samples, unanswerable_samples = self._create_samples()
+        self.samples = samples
+        self.unanswerable_samples = unanswerable_samples
         self.tokenizer = None
         self.batch_size = args.batch_size if 'batch_size' in args else 1
         self.pad_token_id = self.tokenizer.pad_token_id \
@@ -414,6 +416,7 @@ class QADataset(Dataset):
         last_sent_correct_answers = set() 
 
         samples = []
+        unanswerable_samples = []
         for idx, elem in enumerate(self.elems):
 
             t_passage = elem['context']
@@ -521,9 +524,12 @@ class QADataset(Dataset):
                         token.lower() for (token, offset) in elem['context_tokens']
                     ][:self.args.max_context_length]
  
-                samples.append(
-                    (qid, passage, question, answer_start, answer_end)
-                )
+                sample = (qid, passage, question, answer_start, answer_end)
+
+                if class_set and answer_start > last_sent_start_tok:
+                    unanswerable_samples.append(sample)
+                else:
+                    samples.append(sample)
 
                 if answer_start > last_sent_start_tok:
                     last_sent_correct_answers.add(t_question)
@@ -541,7 +547,7 @@ class QADataset(Dataset):
         #    print("num_ques_adv_incorrect: %s" % state.num_ques_adv_incorrect)
 
         print("Completed processing samples")
-        return samples
+        return samples, unanswerable_samples
 
 
     def _create_data_generator(self, shuffle_examples=False):
