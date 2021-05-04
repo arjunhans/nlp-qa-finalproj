@@ -56,16 +56,16 @@ def load_dataset(path):
     idx = 0
     elems = []
     with gzip.open(path, 'rb') as f:
-        for l in tqdm(f, desc=f'loading \'{path}\'', leave=False): 
-            idx += 1
-            elems += [json.loads(l.rstrip())]
-            if idx > 500:
-                break
+    #    for l in tqdm(f, desc=f'loading \'{path}\'', leave=False): 
+    #        idx += 1
+    #        elems += [json.loads(l.rstrip())]
+    #        if idx > 2000:
+    #            break
 
-        #elems = [
-        #    json.loads(l.rstrip())
-        #    for l in tqdm(f, desc=f'loading \'{path}\'', leave=False)
-        #]
+        elems = [
+            json.loads(l.rstrip())
+            for l in tqdm(f, desc=f'loading \'{path}\'', leave=False)
+        ]
     meta, samples = elems[0], elems[1:]
     return (meta, samples)
 

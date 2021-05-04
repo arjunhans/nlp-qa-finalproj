@@ -414,7 +414,7 @@ class QADataset(Dataset):
 
         base_example_idxs, base_examples_to_adversial_examples = get_base_adversarial_set(self)
 
-        print("Processing %s passages" % len(self.elems))
+        #print("Processing %s passages" % len(self.elems))
         #print("No. base samples: %s" % len(base_example_idxs))
         #print("No. adversarial samples: %s" % (len(self.elems) - len(base_example_idxs)))
 
@@ -428,7 +428,7 @@ class QADataset(Dataset):
         start_time = time.time()
 
         perform_checks = self.args.do_train or (not self.args.do_train and not is_train)
-        print("Perform checks: %s" % perform_checks)
+        #print("Perform checks: %s" % perform_checks)
 
         for idx, elem in enumerate(self.elems):
             t_passage = elem['context']
@@ -444,8 +444,6 @@ class QADataset(Dataset):
                 nlp_passage = nlp(t_passage)
                 sent_to_idx, idx_to_sent = get_sent_idx_maps(nlp_passage)
                 last_sent = idx_to_sent[max(idx_to_sent)]
-                last_sent_start_tok = last_sent.start
-                last_start_sent_char = last_sent.start_char
 
                 # NER Tagging
                 sent_ner_tags_map = get_ner_tags(nlp_passage, sent_to_idx)
@@ -518,9 +516,10 @@ class QADataset(Dataset):
                             state = all_state[tag]
 
                             class_set = p_set & q_set
+                            last_sent_contains_answer = (last_sent.start  <= answer_end and answer_end <= last_sent.end)
 
                             if idx in base_example_idxs:
-                                if answer_start >= last_sent_start_tok:
+                                if last_sent_contains_answer:
                                     if class_set: 
                                         assert(len(class_set) == 1 and min(class_set) == max(idx_to_sent.keys()))
                                         state.num_ques_base_incorrect += 1
@@ -533,14 +532,14 @@ class QADataset(Dataset):
                                 else: 
                                     state.num_ques_adv_incorrect += 1
 
-                    is_unanswerable_question = class_set and answer_start >= last_sent_start_tok
+                    is_unanswerable_question = class_set and last_sent_contains_answer
                 
-                    if answer_start > last_sent_start_tok:
+                    if answer_start > last_sent.start:
                         last_sent_correct_answers.add(t_question)
                 
                 if class_set:
                     passage = [
-                        token.lower() for (token, offset) in elem['context_tokens'] if offset < last_start_sent_char
+                        token.lower() for (token, offset) in elem['context_tokens'] if offset < last_sent.start_char
                     ][:self.args.max_context_length]
                 else: 
                     passage = [
@@ -553,7 +552,9 @@ class QADataset(Dataset):
                     #print("unaswerable question: %s (%s) in passage %d" % (t_question, qid, idx))
                     unaswerable_questions.append(" ".join(question))
                     culled_samples.append(sample)
+                    #print("Cull passage %s, question %s" % (t_passage, t_question))
                 else:
+                    #print("Add sample for passage %s, sentence %s" % (" ".join(passage), " ".join(question)))
                     samples.append(sample)
                 questions.add(" ".join(question))
 

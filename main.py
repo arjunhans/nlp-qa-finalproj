@@ -264,8 +264,10 @@ def _calculate_loss(
     """
     # If the gold span is outside the scope of the maximum
     # context length, then ignore these indices when computing the loss.
+    print("*")
     for text_question in text_questions:
         assert text_question in dataset.questions
+
     ignored_index = start_logits.size(1)
     start_positions.clamp_(0, ignored_index)
     end_positions.clamp_(0, ignored_index)
@@ -277,6 +279,11 @@ def _calculate_loss(
 
     loss = (start_loss + end_loss) / 2.
     if loss == float("inf"):
+        print("INF FOUND")
+        print("start_positions: %s" % str(start_positions))
+        print("end_positions: %s" % str(end_positions))
+        print("start_logits: %s" % str(start_logits))
+        print("end_logits: %s" % str(end_logits))
         for text_question in text_questions: 
             if text_question in dataset.unaswerable_questions:
                 print("Found unanswerable question %s" % text_question)
