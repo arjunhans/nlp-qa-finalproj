@@ -11,7 +11,7 @@ import torch
 from torch.utils.data import Dataset
 from random import shuffle
 from utils import cuda, load_dataset
-
+import time
 
 PAD_TOKEN = '[PAD]'
 UNK_TOKEN = '[UNK]'
@@ -384,18 +384,24 @@ class QADataset(Dataset):
         tokenizer: `Tokenizer` object.
         batch_size: Int. The number of example in a mini batch.
     """
-    def __init__(self, args, path):
+    def __init__(self, args, path, is_train):
         self.args = args
         self.meta, self.elems = load_dataset(path)
-        samples, unanswerable_samples = self._create_samples()
+        samples, culled_samples, unaswerable_questions, questions = self._create_samples(is_train)
+        print("**********************************************************")
+        print(("Train" if is_train else "Dev") + \
+            " , no. samples: %s, no. culled samples: %s, no. unaswerable questions: %s, no. questions: %s" % \
+            (len(samples), len(culled_samples), len(unaswerable_questions), len(questions)))
         self.samples = samples
-        self.unanswerable_samples = unanswerable_samples
+        self.culled_samples = culled_samples
+        self.unaswerable_questions = unaswerable_questions
+        self.questions = questions
         self.tokenizer = None
         self.batch_size = args.batch_size if 'batch_size' in args else 1
         self.pad_token_id = self.tokenizer.pad_token_id \
             if self.tokenizer is not None else 0
 
-    def _create_samples(self):
+    def _create_samples(self, is_train):
         """
         Formats raw examples to desired form. Any passages/questions longer
         than max sequence length will be truncated.
@@ -408,7 +414,7 @@ class QADataset(Dataset):
 
         base_example_idxs, base_examples_to_adversial_examples = get_base_adversarial_set(self)
 
-        print("No. samples: %s" % len(self.elems))
+        print("Processing %s passages" % len(self.elems))
         #print("No. base samples: %s" % len(base_example_idxs))
         #print("No. adversarial samples: %s" % (len(self.elems) - len(base_example_idxs)))
 
@@ -416,33 +422,45 @@ class QADataset(Dataset):
         last_sent_correct_answers = set() 
 
         samples = []
-        unanswerable_samples = []
+        culled_samples = []
+        unaswerable_questions = []
+        questions = set()
+        start_time = time.time()
+
+        perform_checks = self.args.do_train or (not self.args.do_train and not is_train)
+        print("Perform checks: %s" % perform_checks)
+
         for idx, elem in enumerate(self.elems):
             t_passage = elem['context']
             #print("***************************************************************************************************")
             #print("BASE" if idx in base_example_idxs else "ADVERSARIAL")
             #print("%s: %s" % (idx, t_passage))
+            if idx % 1000 == 0:
+                print("Processed %d passages" % idx)
+                print("--- %s seconds ---" % (time.time() - start_time))
+                start_time = time.time()
 
-            nlp_passage = nlp(t_passage)
-            sent_to_idx, idx_to_sent = get_sent_idx_maps(nlp_passage)
-            last_sent = idx_to_sent[max(idx_to_sent)]
-            last_sent_start_tok = last_sent.start
-            last_start_sent_char = last_sent.start_char
+            if perform_checks:
+                nlp_passage = nlp(t_passage)
+                sent_to_idx, idx_to_sent = get_sent_idx_maps(nlp_passage)
+                last_sent = idx_to_sent[max(idx_to_sent)]
+                last_sent_start_tok = last_sent.start
+                last_start_sent_char = last_sent.start_char
 
-            # NER Tagging
-            sent_ner_tags_map = get_ner_tags(nlp_passage, sent_to_idx)
-            ner_relevant_sent_idxs = get_ner_relevant_sent_idxs(sent_ner_tags_map, idx_to_sent)
-            ner_irrelevant_sent_idxs = set([idx for idx in idx_to_sent if idx not in ner_relevant_sent_idxs])
-            final_ner_irrelevant_sent_idxs = get_final_set(ner_irrelevant_sent_idxs, idx_to_sent)
-          
-            # Dependency Parsing
-            sent_vals_map = get_sent_vals_map(nlp_passage, sent_to_idx, idx_to_sent)
-            dep_relevant_sent_idxs = get_dep_relevant_sent_idxs(sent_vals_map, idx_to_sent)
-            dep_irrelevant_sent_idxs = set([idx for idx in idx_to_sent if idx not in dep_relevant_sent_idxs])
-            final_dep_irrelevant_sent_idxs = get_final_set(dep_irrelevant_sent_idxs, idx_to_sent)
-            
-            dep_ner_irrelevant_sent_idxs = set(final_dep_irrelevant_sent_idxs) & set(final_ner_irrelevant_sent_idxs)
-            final_dep_ner_irrelevant_sent_idxs = get_final_set(dep_ner_irrelevant_sent_idxs, idx_to_sent)
+                # NER Tagging
+                sent_ner_tags_map = get_ner_tags(nlp_passage, sent_to_idx)
+                ner_relevant_sent_idxs = get_ner_relevant_sent_idxs(sent_ner_tags_map, idx_to_sent)
+                ner_irrelevant_sent_idxs = set([idx for idx in idx_to_sent if idx not in ner_relevant_sent_idxs])
+                final_ner_irrelevant_sent_idxs = get_final_set(ner_irrelevant_sent_idxs, idx_to_sent)
+              
+                # Dependency Parsing
+                sent_vals_map = get_sent_vals_map(nlp_passage, sent_to_idx, idx_to_sent)
+                dep_relevant_sent_idxs = get_dep_relevant_sent_idxs(sent_vals_map, idx_to_sent)
+                dep_irrelevant_sent_idxs = set([idx for idx in idx_to_sent if idx not in dep_relevant_sent_idxs])
+                final_dep_irrelevant_sent_idxs = get_final_set(dep_irrelevant_sent_idxs, idx_to_sent)
+                
+                dep_ner_irrelevant_sent_idxs = set(final_dep_irrelevant_sent_idxs) & set(final_ner_irrelevant_sent_idxs)
+                final_dep_ner_irrelevant_sent_idxs = get_final_set(dep_ner_irrelevant_sent_idxs, idx_to_sent)
            
             for qa in elem['qas']:
                 qid = qa['qid']
@@ -456,63 +474,69 @@ class QADataset(Dataset):
                 #print("*")
                 #print("question: %s" % t_question)
 
-                nlp_question = nlp(t_question)
-                ques_to_idx, idx_to_ques = get_sent_idx_maps(nlp_question)
-
-                # NER Tagging
-                ques_ner_tags_map = get_ner_tags(nlp_question, ques_to_idx)
-                ques_ner_tags = list(ques_ner_tags_map.values())[0] if ques_ner_tags_map else []
-                ques_ner_relevant_sent_idxs = get_ques_ner_relevant_sent_idxs(sent_ner_tags_map, idx_to_sent, ques_ner_tags)
-                ques_ner_irrelevant_sent_idxs = set([idx for idx in idx_to_sent if idx not in ques_ner_relevant_sent_idxs])
-                final_ques_ner_irrelevant_sent_idxs = get_final_set(ques_ner_irrelevant_sent_idxs, idx_to_sent)
-
-                # Dependency Parsing
-                ques_vals_map = get_sent_vals_map(nlp_question, ques_to_idx, idx_to_ques)
-                ques_vals = list(ques_vals_map.values())[0] if ques_vals_map else []
-                ques_dep_relevant_sent_idxs = get_ques_dep_relevant_sent_idxs(sent_vals_map, idx_to_sent, ques_vals)
-                ques_dep_irrelevant_sent_idxs = set([idx for idx in idx_to_sent if idx not in ques_dep_relevant_sent_idxs])
-                final_ques_dep_irrelevant_sent_idxs = get_final_set(ques_dep_irrelevant_sent_idxs, idx_to_sent)
-
-                final_ques_dep_ner_irrelevant_sent_idxs = final_ques_ner_irrelevant_sent_idxs & final_ques_dep_irrelevant_sent_idxs
-
-
-                passage_irrelevant = [  #("P_NONE", set(idx_to_sent.keys())),\
-                                        ("P_NER", final_ner_irrelevant_sent_idxs),\
-                                        #("P_DEP", final_dep_irrelevant_sent_idxs),\
-                                        #("P_DEP+NER", final_dep_ner_irrelevant_sent_idxs)
-                                    ]
-                question_irrelevant = [ #("Q_NONE", set(idx_to_sent.keys())),\
-                                        ("Q_NER", final_ques_ner_irrelevant_sent_idxs),\
-                                        #("Q_DEP", final_ques_dep_irrelevant_sent_idxs),\
-                                        #("Q_DEP+NER", final_ques_dep_ner_irrelevant_sent_idxs)
-                                    ]
-
                 class_set = None
-                for (p_tag, p_set) in passage_irrelevant:
-                    for (q_tag, q_set) in question_irrelevant:
-                        if p_tag == "P_NONE" and q_tag == "Q_NONE":
-                            continue
-                        tag = "%s_%s" % (p_tag, q_tag)
-                        if tag not in all_state:
-                            all_state[tag] = Status()
-                        state = all_state[tag]
+                is_unanswerable_question = False
+                if perform_checks: 
+                    nlp_question = nlp(t_question)
+                    ques_to_idx, idx_to_ques = get_sent_idx_maps(nlp_question)
 
-                        class_set = p_set & q_set
+                    # NER Tagging
+                    ques_ner_tags_map = get_ner_tags(nlp_question, ques_to_idx)
+                    ques_ner_tags = list(ques_ner_tags_map.values())[0] if ques_ner_tags_map else []
+                    ques_ner_relevant_sent_idxs = get_ques_ner_relevant_sent_idxs(sent_ner_tags_map, idx_to_sent, ques_ner_tags)
+                    ques_ner_irrelevant_sent_idxs = set([idx for idx in idx_to_sent if idx not in ques_ner_relevant_sent_idxs])
+                    final_ques_ner_irrelevant_sent_idxs = get_final_set(ques_ner_irrelevant_sent_idxs, idx_to_sent)
 
-                        if idx in base_example_idxs:
-                            if answer_start >= last_sent_start_tok:
-                                if class_set: 
-                                    assert(len(class_set) == 1 and min(class_set) == max(idx_to_sent.keys()))
-                                    state.num_ques_base_incorrect += 1
-                                else:
-                                    state.num_ques_base_correct += 1
-                        else: 
-                            if class_set:
-                                assert(len(class_set) == 1 and min(class_set) == max(idx_to_sent.keys()))
-                                state.num_ques_adv_correct += 1
+                    # Dependency Parsing
+                    ques_vals_map = get_sent_vals_map(nlp_question, ques_to_idx, idx_to_ques)
+                    ques_vals = list(ques_vals_map.values())[0] if ques_vals_map else []
+                    ques_dep_relevant_sent_idxs = get_ques_dep_relevant_sent_idxs(sent_vals_map, idx_to_sent, ques_vals)
+                    ques_dep_irrelevant_sent_idxs = set([idx for idx in idx_to_sent if idx not in ques_dep_relevant_sent_idxs])
+                    final_ques_dep_irrelevant_sent_idxs = get_final_set(ques_dep_irrelevant_sent_idxs, idx_to_sent)
+
+                    final_ques_dep_ner_irrelevant_sent_idxs = final_ques_ner_irrelevant_sent_idxs & final_ques_dep_irrelevant_sent_idxs
+
+
+                    passage_irrelevant = [  #("P_NONE", set(idx_to_sent.keys())),\
+                                            ("P_NER", final_ner_irrelevant_sent_idxs),\
+                                            #("P_DEP", final_dep_irrelevant_sent_idxs),\
+                                            #("P_DEP+NER", final_dep_ner_irrelevant_sent_idxs)
+                                        ]
+                    question_irrelevant = [ #("Q_NONE", set(idx_to_sent.keys())),\
+                                            ("Q_NER", final_ques_ner_irrelevant_sent_idxs),\
+                                            #("Q_DEP", final_ques_dep_irrelevant_sent_idxs),\
+                                            #("Q_DEP+NER", final_ques_dep_ner_irrelevant_sent_idxs)
+                                        ]
+
+                    for (p_tag, p_set) in passage_irrelevant:
+                        for (q_tag, q_set) in question_irrelevant:
+                            if p_tag == "P_NONE" and q_tag == "Q_NONE":
+                                continue
+                            tag = "%s_%s" % (p_tag, q_tag)
+                            if tag not in all_state:
+                                all_state[tag] = Status()
+                            state = all_state[tag]
+
+                            class_set = p_set & q_set
+
+                            if idx in base_example_idxs:
+                                if answer_start >= last_sent_start_tok:
+                                    if class_set: 
+                                        assert(len(class_set) == 1 and min(class_set) == max(idx_to_sent.keys()))
+                                        state.num_ques_base_incorrect += 1
+                                    else:
+                                        state.num_ques_base_correct += 1
                             else: 
-                                state.num_ques_adv_incorrect += 1
+                                if class_set:
+                                    assert(len(class_set) == 1 and min(class_set) == max(idx_to_sent.keys()))
+                                    state.num_ques_adv_correct += 1
+                                else: 
+                                    state.num_ques_adv_incorrect += 1
 
+                    is_unanswerable_question = class_set and answer_start >= last_sent_start_tok
+                
+                    if answer_start > last_sent_start_tok:
+                        last_sent_correct_answers.add(t_question)
                 
                 if class_set:
                     passage = [
@@ -525,14 +549,14 @@ class QADataset(Dataset):
  
                 sample = (qid, passage, question, answer_start, answer_end)
 
-                if class_set and answer_start >= last_sent_start_tok:
+                if is_unanswerable_question:
                     #print("unaswerable question: %s (%s) in passage %d" % (t_question, qid, idx))
-                    unanswerable_samples.append(sample)
+                    unaswerable_questions.append(" ".join(question))
+                    culled_samples.append(sample)
                 else:
                     samples.append(sample)
+                questions.add(" ".join(question))
 
-                if answer_start > last_sent_start_tok:
-                    last_sent_correct_answers.add(t_question)
                
         #print("**********")
         #print("RESULTS")      
@@ -548,7 +572,7 @@ class QADataset(Dataset):
 
         #print("Completed processing samples")
         #print("unanswerable_samples: %s" % len(unanswerable_samples))
-        return samples, unanswerable_samples
+        return samples, culled_samples, unaswerable_questions, questions
 
 
     def _create_data_generator(self, shuffle_examples=False):
@@ -594,7 +618,7 @@ class QADataset(Dataset):
             questions.append(question_ids)
             start_positions.append(answer_start_ids)
             end_positions.append(answer_end_ids)
-            text_questions.append(question)
+            text_questions.append(" ".join(question))
 
         return zip(passages, questions, start_positions, end_positions, text_questions)
 

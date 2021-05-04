@@ -246,7 +246,7 @@ def _early_stop(args, eval_history):
 
 
 def _calculate_loss(
-    start_logits, end_logits, start_positions, end_positions, text_questions
+    start_logits, end_logits, start_positions, end_positions, text_questions, dataset
 ):
     """
     Calculates cross-entropy loss for QA samples, which is defined as
@@ -264,6 +264,8 @@ def _calculate_loss(
     """
     # If the gold span is outside the scope of the maximum
     # context length, then ignore these indices when computing the loss.
+    for text_question in text_questions:
+        assert text_question in dataset.questions
     ignored_index = start_logits.size(1)
     start_positions.clamp_(0, ignored_index)
     end_positions.clamp_(0, ignored_index)
@@ -275,7 +277,11 @@ def _calculate_loss(
 
     loss = (start_loss + end_loss) / 2.
     if loss == float("inf"):
-        print("text_questions: %s" % text_questions)
+        for text_question in text_questions: 
+            if text_question in dataset.unaswerable_questions:
+                print("Found unanswerable question %s" % text_question)
+            else:
+                print("Answerable question: %s" % text_question)
         assert(False)
 
     return loss
@@ -328,7 +334,8 @@ def train(args, epoch, model, dataset):
             end_logits,
             batch['start_positions'],
             batch['end_positions'],
-            batch['text_questions']
+            batch['text_questions'], 
+            dataset
         )
         loss.backward()
         if args.grad_clip > 0.:
@@ -380,7 +387,8 @@ def evaluate(args, epoch, model, dataset):
                 end_logits,
                 batch['start_positions'],
                 batch['end_positions'],
-                batch['text_questions']
+                batch['text_questions'],
+                dataset
             )
 
             # Update tqdm bar.
@@ -468,12 +476,12 @@ def main(args):
         print()
 
     # Set up datasets.
-    train_dataset = QADataset(args, args.train_path)
-    dev_dataset = QADataset(args, args.dev_path)
+    train_dataset = QADataset(args, args.train_path, is_train=True)
+    dev_dataset = QADataset(args, args.dev_path, is_train=False)
     print("Start creating vocabulary and tokenizer")
 
     # Create vocabulary and tokenizer.
-    vocabulary = Vocabulary(train_dataset.samples, args.vocab_size)
+    vocabulary = Vocabulary(train_dataset.samples + train_dataset.culled_samples, args.vocab_size)
     tokenizer = Tokenizer(vocabulary)
     for dataset in (train_dataset, dev_dataset):
         dataset.register_tokenizer(tokenizer)

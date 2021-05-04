@@ -53,19 +53,19 @@ def load_dataset(path):
     Returns:
         Dataset metadata and samples.
     """
-    #idx = 0
-    #elems = []
+    idx = 0
+    elems = []
     with gzip.open(path, 'rb') as f:
-        #for l in tqdm(f, desc=f'loading \'{path}\'', leave=False): 
-        #    idx += 1
-        #    elems += [json.loads(l.rstrip())]
-        #    if idx > 300:
-        #        break
+        for l in tqdm(f, desc=f'loading \'{path}\'', leave=False): 
+            idx += 1
+            elems += [json.loads(l.rstrip())]
+            if idx > 500:
+                break
 
-        elems = [
-            json.loads(l.rstrip())
-            for l in tqdm(f, desc=f'loading \'{path}\'', leave=False)
-        ]
+        #elems = [
+        #    json.loads(l.rstrip())
+        #    for l in tqdm(f, desc=f'loading \'{path}\'', leave=False)
+        #]
     meta, samples = elems[0], elems[1:]
     return (meta, samples)
 
