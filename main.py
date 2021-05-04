@@ -264,7 +264,6 @@ def _calculate_loss(
     """
     # If the gold span is outside the scope of the maximum
     # context length, then ignore these indices when computing the loss.
-    print("*")
     for text_question in text_questions:
         assert text_question in dataset.questions
 
