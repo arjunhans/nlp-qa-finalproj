@@ -43,7 +43,7 @@ def unpack(tensor):
     return tensor.cpu().numpy().tolist()
 
 
-def load_dataset(path):
+def load_dataset(path, is_train):
     """
     Loads MRQA-formatted dataset from path.
 
@@ -55,17 +55,37 @@ def load_dataset(path):
     """
     idx = 0
     elems = []
+
+    #if is_train:
     with gzip.open(path, 'rb') as f:
-    #    for l in tqdm(f, desc=f'loading \'{path}\'', leave=False): 
-    #        idx += 1
-    #        elems += [json.loads(l.rstrip())]
-    #        if idx > 2000:
-    #            break
+            #for l in tqdm(f, desc=f'loading \'{path}\'', leave=False): 
+            #    val = json.loads(l.rstrip())
+            #    if idx == 0:
+            #        elems += [val]
+            #    idx += 1
+            #    if idx > 18000:
+            #        elems += [val]
+            #    if idx > 19000:
+            #        break
 
         elems = [
             json.loads(l.rstrip())
             for l in tqdm(f, desc=f'loading \'{path}\'', leave=False)
         ]
+    #else: 
+    #    with gzip.open(path, 'rb') as f:
+    #        for l in tqdm(f, desc=f'loading \'{path}\'', leave=False): 
+    #            val = json.loads(l.rstrip())
+    #            idx += 1
+    #            if idx > 100:
+    #                break
+    #            elems += [val]
+            
+            #elems = [
+            #    json.loads(l.rstrip())
+            #    for l in tqdm(f, desc=f'loading \'{path}\'', leave=False)
+            #]    
+
     meta, samples = elems[0], elems[1:]
     return (meta, samples)
 

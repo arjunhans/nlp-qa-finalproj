@@ -145,6 +145,26 @@ def get_final_set(s, idx_to_sent):
         final_set = set()
     return final_set
 
+def get_last_sent_start_end(sent_tokens):
+    sent_token_idxs = [(idx, val) for idx, val in enumerate(sent_tokens)]
+    #print("sent_token_idxs: %s" % sent_token_idxs)
+    last_sent_end = sent_token_idxs[-1][0]
+    #print("last_sent_end: %s" % last_sent_end)
+    idx = last_sent_end
+    while sent_token_idxs[idx][1][0] != '.':
+        #print("sent_token_idxs[%d]: %s" % (idx, sent_token_idxs[idx][0]))
+        idx -= 1
+        if idx == -1: 
+            return (0, last_sent_end) 
+    last_sent_period_idx = idx
+    idx -= 1
+    while sent_token_idxs[idx][1][0] != '.':
+        #print("sent_token_idxs[%d]: %s" % (idx, sent_token_idxs[idx][0]))
+        idx -= 1
+    last_send_start = idx + 1
+
+    return last_send_start, last_sent_end
+
 def get_sent_idx_maps(nlp_passage):
     sent_to_idx = dict()
     sent_idx = 0
@@ -386,9 +406,9 @@ class QADataset(Dataset):
     """
     def __init__(self, args, path, is_train):
         self.args = args
-        self.meta, self.elems = load_dataset(path)
+        self.meta, self.elems = load_dataset(path, is_train)
         samples, culled_samples, unaswerable_questions, questions = self._create_samples(is_train)
-        print("**********************************************************")
+        #print("**********************************************************")
         print(("Train" if is_train else "Dev") + \
             " , no. samples: %s, no. culled samples: %s, no. unaswerable questions: %s, no. questions: %s" % \
             (len(samples), len(culled_samples), len(unaswerable_questions), len(questions)))
@@ -443,6 +463,7 @@ class QADataset(Dataset):
             if perform_checks:
                 nlp_passage = nlp(t_passage)
                 sent_to_idx, idx_to_sent = get_sent_idx_maps(nlp_passage)
+                last_sent_start, last_sent_end = get_last_sent_start_end(elem['context_tokens'])
                 last_sent = idx_to_sent[max(idx_to_sent)]
 
                 # NER Tagging
@@ -471,6 +492,8 @@ class QADataset(Dataset):
                 t_question = qa['question']
                 #print("*")
                 #print("question: %s" % t_question)
+                #print("last_sent: [%d, %d], answer: [%d, %d]" % (last_sent_start, last_sent_end, answer_start, answer_end))
+                #print("answers: %s"% answers)
 
                 class_set = None
                 is_unanswerable_question = False
@@ -516,8 +539,9 @@ class QADataset(Dataset):
                             state = all_state[tag]
 
                             class_set = p_set & q_set
-                            last_sent_contains_answer = (last_sent.start  <= answer_end and answer_end <= last_sent.end)
-
+                            last_sent_contains_answer = (last_sent_start <= answer_end and answer_end <= last_sent_end)
+                            #print("last_sent_contains_answer: %s" % last_sent_contains_answer)
+                            #print("remove last sent: %d" % len(class_set) == 1)
                             if idx in base_example_idxs:
                                 if last_sent_contains_answer:
                                     if class_set: 
@@ -556,6 +580,7 @@ class QADataset(Dataset):
                 else:
                     #print("Add sample for passage %s, sentence %s" % (" ".join(passage), " ".join(question)))
                     samples.append(sample)
+                    #print("final passage: %s" % " ".join(passage))
                 questions.add(" ".join(question))
 
                

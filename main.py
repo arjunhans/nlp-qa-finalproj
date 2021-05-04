@@ -280,9 +280,14 @@ def _calculate_loss(
     if loss == float("inf"):
         print("INF FOUND")
         print("start_positions: %s" % str(start_positions))
-        print("end_positions: %s" % str(end_positions))
-        print("start_logits: %s" % str(start_logits))
-        print("end_logits: %s" % str(end_logits))
+        for i in range(len(start_positions)): 
+            start = start_positions[i]
+            end = end_positions[i]
+            print("question %s start %d, end %d" % \
+                (text_questions[i], start, end))
+            print("start_logits: %s" % start_logits[i])
+            print("end_logits: %s" % end_logits[i])
+            print("*")
         for text_question in text_questions: 
             if text_question in dataset.unaswerable_questions:
                 print("Found unanswerable question %s" % text_question)
